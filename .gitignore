@@ -17,9 +17,9 @@
 #######################
 # Now add what should be included 
 
-data/*
-eth_app.R
-clean_data.R
+!data/*
+!eth_app.R
+!clean_data.R
 
 
 
