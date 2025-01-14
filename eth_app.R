@@ -43,7 +43,7 @@ server <- function(input, output, session) {
   user_settings <- s3_object
   
   ## Load your shapefile
-  woredas <- read_sf("data/ET_Admin3C_2023_3.geojson")
+  woredas <- readRDS("clean_data/woreda.Rds")
   woredas$id <- 1:nrow(woredas)
   woredas$income <- runif(nrow(woredas), 5000, 50000)
   woredas$population <- runif(nrow(woredas), 5000, 50000)

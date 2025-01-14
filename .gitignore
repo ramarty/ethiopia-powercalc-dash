@@ -21,12 +21,15 @@ aws_keys.csv
 #######################
 # Now add what should be included 
 
-!data/
+!raw_data/
+!clean_data/
 !/**/*.geojson
 !/**/*.Rds
 !/**/*.rds
+!/**/*.Rproj
 !eth_app.R
 !clean_data.R
+
 
 
 
