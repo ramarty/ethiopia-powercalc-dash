@@ -1,6 +1,3 @@
-# Ethiopia Power Calc Dashboard
-# https://robmarty.shinyapps.io/ethiopia_powercalc_dash/
-
 library(shiny)
 library(leaflet)
 library(sf)
@@ -15,6 +12,7 @@ ui <- fluidPage(
     sidebarPanel(
       uiOutput("variable_selector"),  # Placeholder for selectInput
       uiOutput("population_threshold_input"),  # Placeholder for numericInput
+      actionButton("select_rural", "Step 3: Select all rural woredas"),
       verbatimTextOutput("stats"),
       verbatimTextOutput("rural_count"),
       downloadButton("download_data", "Download CSV")
@@ -47,7 +45,7 @@ server <- function(input, output, session) {
   
   ## Load your shapefile
   woredas <- readRDS("clean_data/woreda.Rds")
-
+  
   # Initialize reactive values with persisted settings
   selected_ids <- reactiveVal(user_settings$selected_woredas)
   map_view <- reactiveVal(NULL)  # To save and restore map view
@@ -71,7 +69,8 @@ server <- function(input, output, session) {
   output$population_threshold_input <- renderUI({
     numericInput(
       "population_threshold",
-      HTML(paste0("Step 2: ",ifelse(input$variable == "pop_u", "Population", "Population density")," threshold for urban/rural classification<br><em>Values above this number considered urban and displayed as gray:</em>")),
+      HTML(paste0("Step 2: ", ifelse(input$variable == "pop_u", "Population", "Population density"), 
+                  " threshold for urban/rural classification<br><em>Values above this number considered urban and displayed as gray:</em>")),
       value = user_settings$population_threshold, # Default value from user_settings
       min = 0
     )
@@ -146,9 +145,18 @@ server <- function(input, output, session) {
     }
   })
   
-  # Save variable and threshold changes to AWS S3
-  observe({
-    user_settings$selected_woredas <- selected_ids() # ids
+  # Observer to handle "Select all rural woredas" button click
+  observeEvent(input$select_rural, {
+    rural_ids <- woredas %>%
+      filter(
+        !!sym(input$variable) < input$population_threshold
+      ) %>%
+      pull(id)
+    
+    selected_ids(rural_ids)
+    
+    # Save updated selections to AWS S3
+    user_settings$selected_woredas <- rural_ids
     user_settings$variable <- input$variable
     user_settings$population_threshold <- input$population_threshold
     aws.s3::s3saveRDS(user_settings, object = object_key, bucket = bucket_name)
