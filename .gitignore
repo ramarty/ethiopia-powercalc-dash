@@ -21,6 +21,7 @@ aws_keys.csv
 #######################
 # Now add what should be included 
 
+!data/
 !/**/*.geojson
 !/**/*.Rds
 !/**/*.rds
