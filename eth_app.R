@@ -1,3 +1,6 @@
+# Ethiopia Power Calc Dashboard
+# https://robmarty.shinyapps.io/ethiopia_powercalc_dash/
+
 library(shiny)
 library(leaflet)
 library(sf)
@@ -44,20 +47,7 @@ server <- function(input, output, session) {
   
   ## Load your shapefile
   woredas <- readRDS("clean_data/woreda.Rds")
-  woredas$id <- 1:nrow(woredas)
-  woredas$income <- runif(nrow(woredas), 5000, 50000)
-  woredas$population <- runif(nrow(woredas), 5000, 50000)
-  woredas$attributes <- NULL
-  woredas$centroid <- NULL
-  
-  ## Prep label
-  woredas <- woredas %>%
-    dplyr::mutate(label = paste(
-      full_name, "<br>",
-      "Population:", round(population), "<br>",
-      "Income:", round(income)
-    ))
-  
+
   # Initialize reactive values with persisted settings
   selected_ids <- reactiveVal(user_settings$selected_woredas)
   map_view <- reactiveVal(NULL)  # To save and restore map view
@@ -70,8 +60,9 @@ server <- function(input, output, session) {
   output$variable_selector <- renderUI({
     selectInput(
       "variable",
-      "Select variable to visualize:",
-      choices = c("Population" = "population", "Income" = "income"),
+      HTML("<b>Step 1:</b> Choose variable for threshold"),
+      choices = c("Population" = "pop_u", 
+                  "Population Density" = "pop_density"),
       selected = user_settings$variable # Default value from user_settings
     )
   })
@@ -80,7 +71,7 @@ server <- function(input, output, session) {
   output$population_threshold_input <- renderUI({
     numericInput(
       "population_threshold",
-      HTML("Population threshold for urban/rural classification\n<em>Values above this number considered urban and displayed as gray:</em>"),
+      HTML(paste0("Step 2: ",ifelse(input$variable == "pop_u", "Population", "Population density")," threshold for urban/rural classification<br><em>Values above this number considered urban and displayed as gray:</em>")),
       value = user_settings$population_threshold, # Default value from user_settings
       min = 0
     )
@@ -96,7 +87,7 @@ server <- function(input, output, session) {
           id %in% selected_ids(),
           "blue",  # Highlight selected woredas in blue
           ifelse(
-            population > input$population_threshold,
+            woredas[[ifelse(length(input$variable) == 0, "pop_u", input$variable)]] > input$population_threshold,
             "gray",  # Urban clusters in gray
             colorNumeric("YlOrRd", woredas[[input$variable]])(woredas[[input$variable]])
           )
@@ -104,11 +95,6 @@ server <- function(input, output, session) {
         fillOpacity = 1,
         color = "black",
         weight = 1,
-        popup = ~paste(
-          name, "<br>",
-          "Population:", population, "<br>",
-          "Income:", income
-        ),
         highlightOptions = highlightOptions(
           weight = 3,
           color = "blue",
@@ -175,20 +161,25 @@ server <- function(input, output, session) {
       return("No woredas selected.")
     }
     
-    sum_population <- sum(selected$population, na.rm = TRUE)
-    sum_income <- sum(selected$income, na.rm = TRUE)
+    sum_population <- sum(selected$pop_u, na.rm = TRUE)
+    avg_density <- mean(selected$pop_density, na.rm = TRUE)
     
     paste(
       "Selected Woredas:", nrow(selected), "\n",
-      "Total Population:", round(sum_population, 2), "\n",
-      "Total Income:", round(sum_income, 2)
+      "Total Population:", round(sum_population), "\n",
+      "Average Population Density:", round(avg_density, 2)
     )
   })
   
   # Display count of rural woredas
   output$rural_count <- renderText({
     threshold <- input$population_threshold
-    rural_count <- sum(woredas$population < threshold, na.rm = TRUE)
+    
+    var <- ifelse(length(input$variable) == 0,
+                  "pop_u",
+                  input$variable)
+    
+    rural_count <- sum(woredas[[var]] < threshold, na.rm = TRUE)
     paste("Total Rural Woredas:", rural_count)
   })
   

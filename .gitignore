@@ -17,6 +17,7 @@
 #######################
 # Keys should be ignored!
 aws_keys.csv
+raw_data/Woreda_Master.csv
 
 #######################
 # Now add what should be included 
