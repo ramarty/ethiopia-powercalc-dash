@@ -1,2 +1,2 @@
-# ethiopia-powercalc-dash
-Ethiopia Dashboard to Facilitate Power Calculations
+# Dashboard to Support Power Calculations
+
