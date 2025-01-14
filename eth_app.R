@@ -17,17 +17,64 @@ ui <- fluidPage(
       #actionButton("deselect_all", "Deselect All Woredas", style = "margin-bottom: 10px; color: red;"),
       uiOutput("variable_selector"),  # Step 1
       uiOutput("population_threshold_input"),  # Step 2
-      actionButton("select_rural", "Step 3: Select all rural woredas", style = "font-weight: bold;"),
-      uiOutput("zone_exclude_selector"),  # Step 4 (Zones)
+      #actionButton("select_rural", "Step 3: Select all rural woredas", style = "font-weight: bold;"),
+      #uiOutput("zone_exclude_selector"),  # Step 4 (Zones)
+      
+      div(
+        actionButton("select_rural", "Step 3: Select all rural woredas", style = "font-weight: bold;"),
+        style = "margin-bottom: 20px;" # Adds 20px vertical space below the button
+      ),
+      uiOutput("zone_exclude_selector"), # Step 4 (Zones)
+      
       uiOutput("region_exclude_selector"),  # Step 4 (Regions)
+      HTML("<b>Step 6: Manually click Woredas on map to exclude/include others</b>"),
+      br(),
+      br(),
       verbatimTextOutput("rural_count"),
       verbatimTextOutput("stats"),
-      downloadButton("download_data", "Download CSV")
+      
+      #hr(),
+      tags$hr(style = "border: 2px solid black;"),
+      
+      h5("You can save and load maps and settings used to make the map"),
+      
+      div(
+        style = "display: flex; align-items: center; gap: 10px; margin-bottom: 10px;",
+        textInput("preset_name", "Name Your Map", width = "300px"), # Use the 'width' argument
+        actionButton("save_preset", "Save Map", style = "color: green;")
+      ),
+      
+      HTML('<b>Available Maps. <span style="color:red; font-style:italic;">NOTE: You must click "Load Map" TWICE for the map to properly load.</span></b>'),
+      div(
+        style = "display: flex; align-items: center; gap: 10px; margin-bottom: 10px;",
+        uiOutput("preset_selector"),
+        actionButton("load_preset", "Load Map", style = "color: blue; margin-bottom: 10px;"),
+        actionButton("delete_preset", "Delete Map", style = "color: red;")
+      ),
+      
+      #hr(),
+      tags$hr(style = "border: 2px solid black;"),
+      
+      div(
+        style = "text-align: center; margin-bottom: 10px;",
+        downloadButton("download_data", "Download CSV")
+      )
+      
     ),
     mainPanel(
       leafletOutput("map", height = "600px")
-    )
-  )
+    ),
+
+  ),
+  br(),
+  br(),
+  br(),
+  br(),
+  br(),
+  br(),
+  br(),
+  br(),
+  br()
 )
 
 server <- function(input, output, session) {
@@ -55,6 +102,7 @@ server <- function(input, output, session) {
   
   # Initialize reactive values
   selected_ids <- reactiveVal(user_settings$selected_woredas)
+  map_view <- reactiveVal(NULL)  # To save and restore map view
   #excluded_zones <- reactiveVal(user_settings$excluded_zones %||% c())
   #excluded_regions <- reactiveVal(user_settings$excluded_regions %||% c())
   
@@ -165,6 +213,40 @@ server <- function(input, output, session) {
       )
   })
   
+  # Save the map view when the user moves or zooms the map
+  observeEvent(input$map_bounds, {
+    map_view(list(
+      center = input$map_center,
+      zoom = input$map_zoom
+    ))
+  })
+  
+  # Update selected woredas on map click
+  observeEvent(input$map_shape_click, {
+    click <- input$map_shape_click
+    if (!is.null(click$id)) {
+      ids <- selected_ids()
+      if (click$id %in% ids) {
+        ids <- setdiff(ids, click$id)
+      } else {
+        ids <- c(ids, click$id)
+      }
+      selected_ids(ids)
+      
+      # Save updated selections to AWS S3
+      user_settings$selected_woredas <- ids
+      user_settings$variable <- input$variable
+      user_settings$population_threshold <- input$population_threshold
+      aws.s3::s3saveRDS(user_settings, object = object_key, bucket = bucket_name)
+    }
+    
+    # Restore map view after click
+    if (!is.null(map_view())) {
+      leafletProxy("map") %>%
+        setView(lng = map_view()$center[[1]], lat = map_view()$center[[2]], zoom = map_view()$zoom)
+    }
+  })
+  
   # Save selected woredas to AWS S3
   observe({
     user_settings$selected_woredas <- selected_ids()
@@ -236,8 +318,8 @@ server <- function(input, output, session) {
     #threshold <- input$population_threshold
     
     threshold <- ifelse(length(input$population_threshold) == 0,
-                  10,
-                  input$population_threshold)
+                        10,
+                        input$population_threshold)
     
     var <- ifelse(length(input$variable) == 0,
                   "pop_u",
@@ -272,6 +354,137 @@ server <- function(input, output, session) {
     },
     contentType = "text/csv"
   )
+  
+  
+  # Define the preset path
+  preset_folder <- "presets"
+  
+  # Save preset to S3
+  observeEvent(input$save_preset, {
+    if (input$preset_name != "") {
+      # Save the current settings as a preset
+      preset_data <- list(
+        selected_woredas = selected_ids(),
+        variable = input$variable,
+        population_threshold = input$population_threshold,
+        exclude_zones = input$exclude_zones,
+        exclude_regions = input$exclude_regions
+      )
+      
+      # Path to save the preset
+      preset_path <- file.path(preset_folder, paste0(input$preset_name, ".rds"))
+      aws.s3::s3saveRDS(preset_data, object = preset_path, bucket = bucket_name)
+      
+      # Notify user
+      showNotification("Preset saved successfully!", type = "message")
+      
+      # Refresh the list of presets
+      presets <- aws.s3::get_bucket(bucket_name, prefix = preset_folder) %>%
+        purrr::map_chr(~ .x$Key) %>%
+        purrr::keep(~ grepl("\\.rds$", .x)) %>%
+        basename() %>%
+        sub("\\.rds$", "", .)
+      
+      # Update the dropdown with the new list
+      updateSelectInput(session, "preset_list", choices = presets)
+    } else {
+      showNotification("Please enter a name for the preset.", type = "error")
+    }
+  })
+  
+  
+  # List available presets
+  output$preset_selector <- renderUI({
+    presets <- aws.s3::get_bucket(bucket_name, prefix = preset_folder) %>%
+      purrr::map_chr(~ .x$Key) %>%
+      purrr::keep(~ grepl("\\.rds$", .x)) %>%
+      basename() %>%
+      sub("\\.rds$", "", .)
+    
+    selectInput("preset_list", NULL, choices = presets, selected = NULL, width = "150px")
+  })
+  
+  # Load preset from S3
+  observeEvent(input$load_preset, {
+    if (!is.null(input$preset_list)) {
+      
+
+      preset_path <- file.path(preset_folder, paste0(input$preset_list, ".rds"))
+      preset_data <- aws.s3::s3readRDS(preset_path, bucket = bucket_name)
+      
+      # Update reactive values with loaded settings
+      selected_ids(preset_data$selected_woredas)
+      
+      updateSelectInput(session, "variable", selected = preset_data$variable)
+      updateNumericInput(session, "population_threshold", value = preset_data$population_threshold)
+      
+      # Handle excluded zones and regions: Set to blank if missing
+      updateSelectizeInput(
+        session,
+        "exclude_zones",
+        selected = if (is.null(preset_data$exclude_zones)) character(0) else preset_data$exclude_zones
+      )
+      updateSelectizeInput(
+        session,
+        "exclude_regions",
+        selected = if (is.null(preset_data$exclude_regions)) character(0) else preset_data$exclude_regions
+      )
+      
+      # # Wait until inputs for zones and regions are updated before recalculating exclusions
+      # isolate({
+      #   observe({
+      #     req(input$exclude_zones, input$exclude_regions) # Ensure inputs are updated
+      #     # Update map logic here if needed, ensuring correct zones/regions are applied
+      #     
+      #     ids_to_exclude <- woredas %>%
+      #       filter(zone %in% input$exclude_zones | region %in% input$exclude_regions) %>%
+      #       pull(id)
+      #     
+      #     selected_ids(setdiff(selected_ids(), ids_to_exclude))
+      #     
+      #   })
+      # })
+      
+      # Notify user
+      showNotification("Preset loaded successfully!", type = "message")
+    } else {
+      showNotification("Please select a preset to load.", type = "error")
+    }
+  })
+  
+  # Delete preset from S3
+  observeEvent(input$delete_preset, {
+    if (!is.null(input$preset_list)) {
+      # Path to the selected preset in the S3 bucket
+      preset_path <- file.path(preset_folder, paste0(input$preset_list, ".rds"))
+      
+      # Delete the file from the S3 bucket
+      delete_success <- aws.s3::delete_object(object = preset_path, bucket = bucket_name)
+      
+      if (delete_success) {
+        # Notify user of success
+        showNotification("Preset deleted successfully!", type = "message")
+        
+        # Refresh the list of presets
+        presets <- aws.s3::get_bucket(bucket_name, prefix = preset_folder) %>%
+          purrr::map_chr(~ .x$Key) %>%
+          purrr::keep(~ grepl("\\.rds$", .x)) %>%
+          basename() %>%
+          sub("\\.rds$", "", .)
+        
+        # Update the dropdown with the new list
+        updateSelectInput(session, "preset_list", choices = presets)
+      } else {
+        # Notify user of failure
+        showNotification("Failed to delete the preset. Please try again.", type = "error")
+      }
+    } else {
+      showNotification("Please select a preset to delete.", type = "error")
+    }
+  })
+  
+  
+
 }
 
 shinyApp(ui, server)
