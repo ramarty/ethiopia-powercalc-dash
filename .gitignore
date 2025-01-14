@@ -15,9 +15,15 @@
 *
 
 #######################
+# Keys should be ignored!
+aws_keys.csv
+
+#######################
 # Now add what should be included 
 
-!data/*
+!/**/*.geojson
+!/**/*.Rds
+!/**/*.rds
 !eth_app.R
 !clean_data.R
 
