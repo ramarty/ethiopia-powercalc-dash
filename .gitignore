@@ -1,49 +1,25 @@
-# History files
-.Rhistory
-.Rapp.history
+########################################################################
+#
+# Based on DIME .gitignore template. Follow the instructions in the URL
+# below to set up this template in your own repository
+# https://github.com/worldbank/dime-github-trainings/tree/master/GitHub-resources/DIME-GitHub-Templates
+#
+# Note that if you are using GitKraken, you need to use version 5.x or more
+# recent for this template to work properly
+#
+########################################################################
 
-# Session Data files
-.RData
-.RDataTmp
+#######################
+# Start by ignoring everything, and below we are explicitly saying
+# what to not ignore
+*
 
-# User-specific files
-.Ruserdata
+#######################
+# Now add what should be included 
 
-# Example code in package build process
-*-Ex.R
+data/*
+eth_app.R
+clean_data.R
 
-# Output files from R CMD build
-/*.tar.gz
 
-# Output files from R CMD check
-/*.Rcheck/
 
-# RStudio files
-.Rproj.user/
-
-# produced vignettes
-vignettes/*.html
-vignettes/*.pdf
-
-# OAuth2 token, see https://github.com/hadley/httr/releases/tag/v0.3
-.httr-oauth
-
-# knitr and R markdown default cache directories
-*_cache/
-/cache/
-
-# Temporary files created by R markdown
-*.utf8.md
-*.knit.md
-
-# R Environment Variables
-.Renviron
-
-# pkgdown site
-docs/
-
-# translation temp files
-po/*~
-
-# RStudio Connect folder
-rsconnect/
