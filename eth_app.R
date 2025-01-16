@@ -7,9 +7,12 @@ library(htmltools)
 library(aws.s3)
 
 ui <- fluidPage(
-  titlePanel("Ethiopia Woredas: Dashboard"),
+  titlePanel("Woreda Selection for Fyda Rollout"),
   sidebarLayout(
     sidebarPanel(
+      
+      HTML("<em>This tool helps identify woredas suitable for the randomised rollout of Fayda IDs. Out goal is to create a final list of woredas where implementation is feasible.</em>"),
+      
       div(
         style = "text-align: center; margin-bottom: 10px;",
         actionButton("deselect_all", "Deselect All Woredas", style = "color: red;")
@@ -110,7 +113,7 @@ server <- function(input, output, session) {
   output$variable_selector <- renderUI({
     selectInput(
       "variable",
-      HTML("<b>Step 1:</b> Choose variable for threshold"),
+      HTML("<b>1.</b> Population Variable for Urban/Rural Classification"),
       choices = c("Population" = "pop_u", 
                   "Population Density" = "pop_density"),
       selected = user_settings$variable
@@ -121,8 +124,7 @@ server <- function(input, output, session) {
   output$population_threshold_input <- renderUI({
     numericInput(
       "population_threshold",
-      HTML(paste0("Step 2: ", ifelse(input$variable == "pop_u", "Population", "Population density"), 
-                  " threshold for urban/rural classification<br><em>Values above this number considered urban and displayed as gray:</em>")),
+      HTML("2. Urban/Rural Classification<br><small>We suggest classifying woredas with population below 100,000 as rural</small>"),
       value = user_settings$population_threshold,
       min = 0
     )
@@ -186,11 +188,11 @@ server <- function(input, output, session) {
         layerId = ~id,
         fillColor = ~ifelse(
           id %in% selected_ids(),
-          "blue",
+          "forestgreen",
           ifelse(
             woredas[[ifelse(length(input$variable) == 0, "pop_u", input$variable)]] > ifelse(length(input$population_threshold) == 0, 0, input$population_threshold),
             "gray",
-            colorNumeric("YlOrRd", woredas[[input$variable]])(woredas[[input$variable]])
+            "yellow"
           )
         ),
         fillOpacity = 1,
@@ -210,8 +212,48 @@ server <- function(input, output, session) {
           direction = "auto",
           html = TRUE
         )
+      ) %>%
+      addLegend(
+        position = "bottomright",
+        colors = c("forestgreen", "yellow", "gray"),
+        labels = c("Selected Rural", "Excluded Rural", "Urban"),
+        title = "Legend"
       )
   })
+  
+  # output$map <- renderLeaflet({
+  #   leaflet(data = woredas) %>%
+  #     addTiles() %>%
+  #     addPolygons(
+  #       layerId = ~id,
+  #       fillColor = ~ifelse(
+  #         id %in% selected_ids(),
+  #         "blue",
+  #         ifelse(
+  #           woredas[[ifelse(length(input$variable) == 0, "pop_u", input$variable)]] > ifelse(length(input$population_threshold) == 0, 0, input$population_threshold),
+  #           "gray",
+  #           colorNumeric("YlOrRd", woredas[[input$variable]])(woredas[[input$variable]])
+  #         )
+  #       ),
+  #       fillOpacity = 1,
+  #       color = "black",
+  #       weight = 1,
+  #       highlightOptions = highlightOptions(
+  #         weight = 3,
+  #         color = "blue",
+  #         fillOpacity = 0.7,
+  #         bringToFront = TRUE,
+  #         sendToBack = TRUE
+  #       ),
+  #       label = ~lapply(label, HTML),
+  #       labelOptions = labelOptions(
+  #         style = list("font-weight" = "bold", "font-size" = "12px"),
+  #         textOnly = FALSE,
+  #         direction = "auto",
+  #         html = TRUE
+  #       )
+  #     )
+  # })
   
   # Save the map view when the user moves or zooms the map
   observeEvent(input$map_bounds, {
