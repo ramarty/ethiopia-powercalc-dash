@@ -6,6 +6,8 @@ library(leaflet)
 library(tidyverse)
 library(stringr)
 
+# Woreda -----------------------------------------------------------------------
+
 ## Load data
 woreda_sf <- read_sf(here("raw_data", "ET_Admin3C_2023_3.geojson"))
 woreda_df <- read_csv(here("raw_data", "Woreda_Master.csv"))
@@ -44,6 +46,11 @@ woreda_sf <- woreda_sf %>%
   st_simplify(100)
 
 saveRDS(woreda_sf, here("clean_data", "woreda.Rds"))
+
+# Woreda -----------------------------------------------------------------------
+mde_df    <- read_csv(here("raw_data", "MDEs_Rural_1_to_850.csv"))
+
+saveRDS(mde_df, here("clean_data", "mdes.Rds"))
 
 
 # leaflet() %>%

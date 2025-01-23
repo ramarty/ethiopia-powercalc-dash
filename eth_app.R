@@ -5,6 +5,7 @@ library(dplyr)
 library(geodata)
 library(htmltools)
 library(aws.s3)
+# library(shinytreeview) # remotes::install_github("dreamRs/shinytreeview")
 
 ui <- fluidPage(
   titlePanel("Woreda Selection for Fyda Rollout"),
@@ -33,8 +34,15 @@ ui <- fluidPage(
       HTML("<b>Step 6: Manually click Woredas on map to exclude/include others</b>"),
       br(),
       br(),
-      verbatimTextOutput("rural_count"),
-      verbatimTextOutput("stats"),
+      
+      div(
+        style = "border: 1px solid #ddd; padding: 10px; border-radius: 5px; background-color: #f9f9f9; margin-top: 20px;",
+        HTML("<b>Current Selection Summary</b>"),
+        verbatimTextOutput("rural_count"),
+        verbatimTextOutput("stats"),
+        HTML("<b>Statistical Power Analysis</b><br><small>Minimum detectable effects with selected woredas at 80% power</small>"),
+        verbatimTextOutput("mde_stats")
+      ),
       
       #hr(),
       tags$hr(style = "border: 2px solid black;"),
@@ -67,7 +75,7 @@ ui <- fluidPage(
     mainPanel(
       leafletOutput("map", height = "600px")
     ),
-
+    
   ),
   br(),
   br(),
@@ -100,6 +108,9 @@ server <- function(input, output, session) {
   s3_object <- aws.s3::s3readRDS(object_key, bucket = bucket_name)
   user_settings <- s3_object
   
+  ## Load MDEs
+  mde_df <- readRDS("clean_data/mdes.Rds")
+  
   ## Load your shapefile
   woredas <- readRDS("clean_data/woreda.Rds")
   
@@ -113,7 +124,7 @@ server <- function(input, output, session) {
   output$variable_selector <- renderUI({
     selectInput(
       "variable",
-      HTML("<b>1.</b> Population Variable for Urban/Rural Classification"),
+      HTML("<b>1.</b> Population Variable for Rural/Urban Classification"),
       choices = c("Population" = "pop_u", 
                   "Population Density" = "pop_density"),
       selected = user_settings$variable
@@ -134,7 +145,7 @@ server <- function(input, output, session) {
   output$zone_exclude_selector <- renderUI({
     selectizeInput(
       "exclude_zones",
-      "Step 4: Exclude Woredas within Zones",
+      HTML("Step 4: Zone Level Exclusion<br><small>Select zones to exclude (e.g., due to security concerns)</small>"),
       choices = sort(unique(woredas$zone)),
       selected = user_settings$exclude_zones,
       multiple = TRUE,
@@ -145,7 +156,7 @@ server <- function(input, output, session) {
   output$region_exclude_selector <- renderUI({
     selectizeInput(
       "exclude_regions",
-      "Step 5: Exclude Woredas within Regions",
+      HTML("Step 5: Region Level Exclusion<br><small>Select zones to exclude (e.g., due to security concerns)</small>"),
       choices = sort(unique(woredas$region)),
       selected = user_settings$exclude_regions,
       multiple = TRUE,
@@ -311,9 +322,28 @@ server <- function(input, output, session) {
     
     paste(
       "Selected Woredas:", nrow(selected), "\n",
-      "Total Population:", round(sum_population), "\n",
+      "Total Population:", format(round(sum_population), big.mark = ",", scientific = FALSE), "\n",
       "Average Population Density:", round(avg_density, 2)
     )
+  })
+  
+  # MDE Text
+  output$mde_stats <- renderText({
+    selected <- woredas %>% filter(id %in% selected_ids())
+    if (nrow(selected) == 0) {
+      return("No woredas selected.")
+    }
+    
+    n_woreda <- nrow(selected)
+    if(n_woreda > 850){
+      n_woreda <- 850
+    }
+    
+    mde_sel_df <- mde_df[mde_df$Cluster_Count %in% n_woreda,]
+    
+    paste0("Financial Access (account ownership): ", mde_sel_df$`Account?`, "\n",
+           "Public Bank: ", mde_sel_df$`Public Bank`, "\n",
+           "Enough Food: ", mde_sel_df$`Enough Food?`)
   })
   
   # Observe button click to select all rural woredas
@@ -450,7 +480,7 @@ server <- function(input, output, session) {
   observeEvent(input$load_preset, {
     if (!is.null(input$preset_list)) {
       
-
+      
       preset_path <- file.path(preset_folder, paste0(input$preset_list, ".rds"))
       preset_data <- aws.s3::s3readRDS(preset_path, bucket = bucket_name)
       
@@ -526,7 +556,7 @@ server <- function(input, output, session) {
   })
   
   
-
+  
 }
 
 shinyApp(ui, server)
