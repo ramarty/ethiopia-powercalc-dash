@@ -5,9 +5,14 @@ library(dplyr)
 library(geodata)
 library(htmltools)
 library(aws.s3)
+library(shinyjs)
+library(scales)
+library(ggplot2)
+
 # library(shinytreeview) # remotes::install_github("dreamRs/shinytreeview")
 
 ui <- fluidPage(
+  useShinyjs(),
   titlePanel("Woreda Selection for Fyda Rollout"),
   sidebarLayout(
     sidebarPanel(
@@ -15,34 +20,54 @@ ui <- fluidPage(
       HTML("<em>This tool helps identify woredas suitable for the randomised rollout of Fayda IDs. Out goal is to create a final list of woredas where implementation is feasible.</em>"),
       
       div(
-        style = "text-align: center; margin-bottom: 10px;",
-        actionButton("deselect_all", "Deselect All Woredas", style = "color: red;")
-      ),
-      #actionButton("deselect_all", "Deselect All Woredas", style = "margin-bottom: 10px; color: red;"),
-      uiOutput("variable_selector"),  # Step 1
-      uiOutput("population_threshold_input"),  # Step 2
-      #actionButton("select_rural", "Step 3: Select all rural woredas", style = "font-weight: bold;"),
-      #uiOutput("zone_exclude_selector"),  # Step 4 (Zones)
-      
-      div(
-        actionButton("select_rural", "Step 3: Select all rural woredas", style = "font-weight: bold;"),
-        style = "margin-bottom: 20px;" # Adds 20px vertical space below the button
-      ),
-      uiOutput("zone_exclude_selector"), # Step 4 (Zones)
-      
-      uiOutput("region_exclude_selector"),  # Step 4 (Regions)
-      HTML("<b>Step 6: Manually click Woredas on map to exclude/include others</b>"),
-      br(),
-      br(),
-      
-      div(
         style = "border: 1px solid #ddd; padding: 10px; border-radius: 5px; background-color: #f9f9f9; margin-top: 20px;",
         HTML("<b>Current Selection Summary</b>"),
         verbatimTextOutput("rural_count"),
         verbatimTextOutput("stats"),
         HTML("<b>Statistical Power Analysis</b><br><small>Minimum detectable effects with selected woredas at 80% power</small>"),
-        verbatimTextOutput("mde_stats")
+        #verbatimTextOutput("mde_stats")
+        
+        plotOutput("mde_plot_1", height = "100px")
+        
       ),
+      
+      br(),
+      tags$hr(style = "border: 2px solid black;"),
+      
+      div(
+        style = "text-align: center; margin-bottom: 10px;",
+        actionButton("deselect_all", "Deselect All Woredas", style = "color: red;")
+      ),
+      
+      # # Button to show the parameter selection section
+      div(
+        style = "text-align: center; margin-bottom: 10px;",
+        actionButton("toggle_parameters", HTML("<b>Select parameters for defining rural areas</b>"))
+      ),
+      
+      # Hidden div for variable selector and population threshold input
+      div(
+        id = "parameters_section",  # ID for toggling visibility
+        style = "display: none;",  # Initially hidden
+        uiOutput("variable_selector"),  # Step 1
+        uiOutput("population_threshold_input")  # Step 2
+      ),
+      
+      #uiOutput("variable_selector"),  # Step 1
+      #uiOutput("population_threshold_input"),  # Step 2
+      
+      div(
+        actionButton("select_rural", "Step 3: Select all rural woredas", style = "font-weight: bold;"),
+        style = "margin-bottom: 20px;" # Adds 20px vertical space below the button
+      ),
+      
+      uiOutput("region_exclude_selector"),  # Step 4 (Regions)
+      
+      uiOutput("zone_exclude_selector"), # Step 4 (Zones)
+      
+      HTML("<b>Step 6: Manually click Woredas on map to exclude/include others</b>"),
+      br(),
+      br(),
       
       #hr(),
       tags$hr(style = "border: 2px solid black;"),
@@ -132,20 +157,49 @@ server <- function(input, output, session) {
   })
   
   # Dynamic UI for Step 2: Population threshold input
+  # output$population_threshold_input <- renderUI({
+  #   numericInput(
+  #     "population_threshold",
+  #     HTML("2. Rural/Urban Classification<br><small>We suggest classifying woredas with population below 100,000 as rural</small>"),
+  #     value = user_settings$population_threshold,
+  #     min = 0
+  #   )
+  # })
+  
   output$population_threshold_input <- renderUI({
-    numericInput(
+    sliderInput(
       "population_threshold",
-      HTML("2. Urban/Rural Classification<br><small>We suggest classifying woredas with population below 100,000 as rural</small>"),
-      value = user_settings$population_threshold,
-      min = 0
+      HTML("2. Rural/Urban Classification<br><small>We suggest classifying woredas with population below 100,000 as rural</small>"),
+      value = ifelse(is.null(user_settings$population_threshold),
+                     100000,
+                     user_settings$population_threshold),  # Default value
+      min = 0,  # Minimum value for the slider
+      max = 665000,  # Maximum value for the slider
+      step = 1000  # Optional: Adjust step size for finer control
     )
+  })
+  
+  output$region_exclude_selector <- renderUI({
+    selectizeInput(
+      "exclude_regions",
+      HTML("Step 4: Region Level Exclusion<br><small>Select zones to exclude (e.g., due to security concerns)</small>"),
+      choices = sort(unique(woredas$region)),
+      selected = user_settings$exclude_regions,
+      multiple = TRUE,
+      options = list(placeholder = "Select regions to exclude")
+    )
+  })
+  
+  # Use shinyjs to toggle visibility of the parameters section
+  observeEvent(input$toggle_parameters, {
+    toggle("parameters_section")  # Toggles visibility of the div with ID "parameters_section"
   })
   
   # Dynamic UI for Step 4: Zone and Region Exclude Selectors
   output$zone_exclude_selector <- renderUI({
     selectizeInput(
       "exclude_zones",
-      HTML("Step 4: Zone Level Exclusion<br><small>Select zones to exclude (e.g., due to security concerns)</small>"),
+      HTML("Step 5: Zone Level Exclusion<br><small>Select zones to exclude (e.g., due to security concerns)</small>"),
       choices = sort(unique(woredas$zone)),
       selected = user_settings$exclude_zones,
       multiple = TRUE,
@@ -153,16 +207,7 @@ server <- function(input, output, session) {
     )
   })
   
-  output$region_exclude_selector <- renderUI({
-    selectizeInput(
-      "exclude_regions",
-      HTML("Step 5: Region Level Exclusion<br><small>Select zones to exclude (e.g., due to security concerns)</small>"),
-      choices = sort(unique(woredas$region)),
-      selected = user_settings$exclude_regions,
-      multiple = TRUE,
-      options = list(placeholder = "Select regions to exclude")
-    )
-  })
+  
   
   # Exclude woredas based on selected zones and regions
   observe({
@@ -328,10 +373,10 @@ server <- function(input, output, session) {
   })
   
   # MDE Text
-  output$mde_stats <- renderText({
+  output$mde_plot_1 <- renderPlot({
     selected <- woredas %>% filter(id %in% selected_ids())
     if (nrow(selected) == 0) {
-      return("No woredas selected.")
+      return(ggplot())
     }
     
     n_woreda <- nrow(selected)
@@ -341,10 +386,34 @@ server <- function(input, output, session) {
     
     mde_sel_df <- mde_df[mde_df$Cluster_Count %in% n_woreda,]
     
-    paste0("Financial Access (account ownership): ", mde_sel_df$`Account?`, "\n",
-           "Public Bank: ", mde_sel_df$`Public Bank`, "\n",
-           "Enough Food: ", mde_sel_df$`Enough Food?`)
+    ggplot() +
+      geom_col(aes(y = "",
+                   x = mde_sel_df$`Borrowed?` * 100),
+               fill = "dodgerblue2",
+               alpha = 0.3) +
+      geom_text(aes(y = "",
+                    x = mde_sel_df$`Borrowed?` * 100,
+                    label = round(mde_sel_df$`Borrowed?` * 100, 2) %>%
+                      paste0("%"))) +
+      geom_vline(xintercept = 10) +
+      geom_text(aes(x = 11.2,
+                    y = 1.4,
+                    label = "Ref. MDE")) +
+      scale_x_continuous(labels = scales::percent_format(scale = 1),
+                         limits = c(0,
+                                    max(
+                                      mde_sel_df$`Borrowed?`*100,
+                                      max(mde_df$`Borrowed?`[100] * 100)
+                                    )
+                         )) +
+      theme_classic() +
+      labs(x = NULL,
+           y = NULL,
+           title = "Access to credit: Did you borrow?") +
+      theme(plot.title = element_text(face = "bold"))
   })
+  
+  # MDE Figure 1
   
   # Observe button click to select all rural woredas
   observeEvent(input$select_rural, {
@@ -488,7 +557,8 @@ server <- function(input, output, session) {
       selected_ids(preset_data$selected_woredas)
       
       updateSelectInput(session, "variable", selected = preset_data$variable)
-      updateNumericInput(session, "population_threshold", value = preset_data$population_threshold)
+      #updateNumericInput(session, "population_threshold", value = preset_data$population_threshold)
+      updateSliderInput(session, "population_threshold", value = preset_data$population_threshold)
       
       # Handle excluded zones and regions: Set to blank if missing
       updateSelectizeInput(

@@ -34,7 +34,8 @@ woreda_df <- woreda_df %>%
                   "Region: ", region, "<br>",
                   "Population: ", pop_u, "<br>",
                   "Population Density: ", round(pop_density, 2)
-                ))
+                )) %>%
+  dplyr::mutate(zone = paste0("{", region, "} ", zone))
 
 ## Merge
 woreda_sf <- woreda_sf %>%
